@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Zox – Your AI warrior mentor. Stern, direct, and built to make you stronger. Powered by Groq AI – fast, free, no setup needed." />
+  <title>ZOX – The Warrior AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Cinzel:wght@700;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Animated background particles -->
+  <canvas id="bg-canvas"></canvas>
+
+  <!-- Slash overlay -->
+  <div id="slash-overlay" class="slash-overlay hidden"></div>
+
+  <!-- Main App -->
+  <div id="app">
+
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="zox-logo-mini">
+          <img src="zox_avatar.png" alt="Zox Avatar" class="avatar-mini" />
+          <div class="logo-text-mini">
+            <span class="logo-name">ZOX</span>
+            <span class="logo-subtitle">Warrior AI</span>
+          </div>
+        </div>
+      </div>
+
+      <button class="new-chat-btn" id="new-chat-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        New Mission
+      </button>
+
+      <div class="chat-history" id="chat-history">
+        <div class="history-label">PAST BATTLES</div>
+        <!-- Dynamic history items -->
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="api-key-section">
+          <label class="api-label" for="groq-key-input">Groq API Key</label>
+          <div class="api-input-row">
+            <input type="password" id="groq-key-input" placeholder="gsk_..." class="api-input" />
+            <button id="save-settings-btn" class="save-key-btn" title="Save key">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            </button>
+          </div>
+          <span class="api-hint" style="margin-top:6px;display:block">Free key at <a href="https://console.groq.com" target="_blank">console.groq.com</a> — no card needed</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Toggle Sidebar Button -->
+    <button class="sidebar-toggle" id="sidebar-toggle" aria-label="Toggle sidebar">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+
+    <!-- Main Chat Area -->
+    <main class="chat-main" id="chat-main">
+
+      <!-- Welcome Screen -->
+      <div class="welcome-screen" id="welcome-screen">
+        <div class="welcome-content">
+          <div class="avatar-ring">
+            <img src="zox_avatar.png" alt="Zox" class="avatar-hero" />
+          </div>
+          <h1 class="welcome-title">
+            <span class="title-zox">ZOX</span>
+          </h1>
+          <p class="welcome-tagline">I'm not here to impress you.<br/>I'm here to make you <em>stronger</em>.</p>
+
+          <div class="starter-grid">
+            <button class="starter-card" data-prompt="How do I learn to code from scratch?">
+              <div class="starter-icon">⚔️</div>
+              <div class="starter-text">
+                <span class="starter-title">Learn to Code</span>
+                <span class="starter-sub">From zero to builder</span>
+              </div>
+            </button>
+            <button class="starter-card" data-prompt="I need to build a web app but don't know where to start.">
+              <div class="starter-icon">🏗️</div>
+              <div class="starter-text">
+                <span class="starter-title">Build a Web App</span>
+                <span class="starter-sub">Plan + execute fast</span>
+              </div>
+            </button>
+            <button class="starter-card" data-prompt="What AI tools should I use as a student creator?">
+              <div class="starter-icon">🔱</div>
+              <div class="starter-text">
+                <span class="starter-title">Best AI Tools</span>
+                <span class="starter-sub">Know your arsenal</span>
+              </div>
+            </button>
+            <button class="starter-card" data-prompt="I keep procrastinating. How do I actually start building?">
+              <div class="starter-icon">🔥</div>
+              <div class="starter-text">
+                <span class="starter-title">Stop Procrastinating</span>
+                <span class="starter-sub">Truth, not comfort</span>
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chat Messages -->
+      <div class="messages-container" id="messages-container">
+        <!-- Messages rendered here -->
+      </div>
+
+      <!-- Input Area -->
+      <div class="input-area">
+        <div class="input-wrapper">
+          <textarea
+            id="chat-input"
+            class="chat-input"
+            placeholder="State your mission..."
+            rows="1"
+            maxlength="4000"
+          ></textarea>
+          <button class="send-btn" id="send-btn" aria-label="Send message" disabled>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          </button>
+        </div>
+        <div class="input-footer">
+          <span class="char-count" id="char-count">0 / 4000</span>
+          <span class="model-badge" id="model-badge">Groq · llama-3.3-70b · Zox v1</span>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
