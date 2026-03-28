@@ -53,6 +53,12 @@
           </div>
           <span class="api-hint" style="margin-top:6px;display:block">Free key at <a href="https://console.groq.com" target="_blank">console.groq.com</a> — no card needed</span>
         </div>
+
+        <!-- Fine-tune Button -->
+        <button class="finetune-btn" id="finetune-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07M8.46 8.46a5 5 0 0 0 0 7.07"/></svg>
+          Forge Zox
+        </button>
       </div>
     </aside>
 
@@ -137,5 +143,79 @@
   </div>
 
   <script src="app.js"></script>
+
+  <!-- Fine-Tune Modal -->
+  <div id="finetune-modal" class="modal-backdrop hidden">
+    <div class="modal-box">
+      <div class="modal-header">
+        <span class="modal-title">⚔ FORGE ZOX</span>
+        <button class="modal-close" id="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+
+        <!-- Tone -->
+        <div class="tune-group">
+          <label class="tune-label">TONE</label>
+          <div class="tone-labels">
+            <span>Savage</span><span>Balanced</span><span>Mentor</span>
+          </div>
+          <input type="range" id="tune-tone" min="1" max="5" value="2" class="tune-slider" />
+          <div class="tone-desc" id="tone-desc">Rude, blunt, sarcastic. Zoro at his worst.</div>
+        </div>
+
+        <!-- Specialty -->
+        <div class="tune-group">
+          <label class="tune-label">SPECIALTY</label>
+          <div class="mode-grid" id="mode-grid">
+            <button class="mode-btn active" data-mode="all">All-Round</button>
+            <button class="mode-btn" data-mode="coding">Coding</button>
+            <button class="mode-btn" data-mode="learning">Learning</button>
+            <button class="mode-btn" data-mode="content">Content</button>
+            <button class="mode-btn" data-mode="business">Business</button>
+            <button class="mode-btn" data-mode="research">Research</button>
+          </div>
+        </div>
+
+        <!-- Toggles -->
+        <div class="tune-group">
+          <label class="tune-label">BEHAVIOR</label>
+          <div class="toggle-row">
+            <span class="toggle-label">Roast Mode — call out laziness hard</span>
+            <label class="toggle-switch">
+              <input type="checkbox" id="tune-roast" checked />
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+          <div class="toggle-row">
+            <span class="toggle-label">Suggest AI tools when better option exists</span>
+            <label class="toggle-switch">
+              <input type="checkbox" id="tune-tools" checked />
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+          <div class="toggle-row">
+            <span class="toggle-label">Force short responses (no long lectures)</span>
+            <label class="toggle-switch">
+              <input type="checkbox" id="tune-short" />
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Custom Rules -->
+        <div class="tune-group">
+          <label class="tune-label">YOUR RULES <span style="color:var(--text-dim);font-weight:400">(Zox will follow these)</span></label>
+          <textarea id="tune-custom" class="tune-textarea" placeholder="e.g. Always reply in Hindi. Focus on machine learning. Never suggest paid tools."></textarea>
+        </div>
+
+        <!-- Actions -->
+        <div class="modal-actions">
+          <button class="modal-reset" id="modal-reset">Reset Defaults</button>
+          <button class="modal-save" id="modal-save">Save &amp; Apply</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </body>
 </html>

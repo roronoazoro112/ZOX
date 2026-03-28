@@ -98,15 +98,59 @@ When you redirect, say WHY that tool is better. Don't just list names.
 ---
 
 ### PERSONALITY IN ONE LINE
-You are the swordsman who will cut through your excuses and hand you the blade to fight your own battles.`;
+You are the swordsman who will cut through your excuses and hand you the blade to fight your own battles.
+
+### MEMORY INJECTION
+If a USER PROFILE section appears below, USE IT. It tells you what you already know about this person. Adapt your tone and advice accordingly — don't re-ask things you already know.`;
+
+/* ---- Dynamic System Prompt (injects memory) ---- */
+function buildSystemPrompt() {
+  const mem = state.userMemory;
+  if (!mem || Object.keys(mem).length === 0) return ZOX_SYSTEM_PROMPT;
+
+  const lines = ['### USER PROFILE (what you already know about this person)'];
+  if (mem.name)               lines.push(`- Name: ${mem.name}`);
+  if (mem.skillLevel)         lines.push(`- Skill level: ${mem.skillLevel}`);
+  if (mem.preferredLanguages?.length) lines.push(`- Languages/tech: ${mem.preferredLanguages.join(', ')}`);
+  if (mem.currentProjects?.length)    lines.push(`- Working on: ${mem.currentProjects.join(', ')}`);
+  if (mem.goals?.length)              lines.push(`- Goals: ${mem.goals.join(', ')}`);
+  if (mem.topicsDiscussed?.length)    lines.push(`- Previously discussed: ${mem.topicsDiscussed.slice(-5).join(', ')}`);
+  if (mem.behaviorNotes)      lines.push(`- Notes: ${mem.behaviorNotes}`);
+
+  return ZOX_SYSTEM_PROMPT + '\n\n' + lines.join('\n');
+}
+
+/* ---- Memory Extraction Prompt ---- */
+const MEMORY_PROMPT = `You are a silent memory extractor for an AI agent named Zox.
+Read the conversation and extract/update facts about the USER ONLY.
+Return ONLY valid JSON — no explanation, no markdown, just raw JSON.
+
+Schema:
+{
+  "name": "user's name if mentioned, else null",
+  "skillLevel": "beginner | intermediate | advanced | null",
+  "preferredLanguages": ["list of programming languages or tech they use"],
+  "currentProjects": ["projects they mentioned building"],
+  "goals": ["what they want to achieve"],
+  "topicsDiscussed": ["key topics covered so far"],
+  "behaviorNotes": "short note on how they communicate or what they prefer"
+}
+
+Rules:
+- Merge with existing data — do not erase fields that were previously set
+- Keep lists short (max 5 items each)
+- If nothing new to extract, return the existing data unchanged
+- Never include anything about Zox, only about the user`;
 
 /* ---- State ---- */
 const state = {
-  groqKey:  localStorage.getItem('zox_groq_key') || '',
-  sessions: JSON.parse(localStorage.getItem('zox_sessions') || '[]'),
+  groqKey:     localStorage.getItem('zox_groq_key') || '',
+  userMemory:  JSON.parse(localStorage.getItem('zox_user_memory') || '{}'),
+  sessions:    JSON.parse(localStorage.getItem('zox_sessions') || '[]'),
   currentSessionId: null,
   messages: [], // [{role, content}]
   isStreaming: false,
+  exchangeCount: 0, // track exchanges for memory update trigger
 };
 
 /* ---- DOM Refs ---- */
@@ -134,6 +178,9 @@ function init() {
     els.groqKeyInput.value = state.groqKey;
     els.groqKeyInput.classList.add('success');
   }
+
+  // Show existing memory in sidebar if any
+  updateMemoryIndicator();
 
   // Render history
   renderHistory();
@@ -299,6 +346,13 @@ async function handleSend() {
     state.messages.push({ role: 'assistant', content: responseText });
     typingRow.remove();
     appendZoxMessage(responseText);
+
+    // Trigger memory update every 3 exchanges
+    state.exchangeCount++;
+    if (state.exchangeCount % 3 === 0) {
+      updateMemory(state.messages).catch(() => {}); // silent background update
+    }
+
   } catch (err) {
     typingRow.remove();
     const errMsg = err.message || 'Unknown error';
@@ -310,14 +364,14 @@ async function handleSend() {
   }
 }
 
-/* ---- Groq API Call ---- */
+/* ---- Groq API Call (main) ---- */
 async function callGroq(messages) {
   const url = 'https://api.groq.com/openai/v1/chat/completions';
 
   const body = {
     model: 'llama-3.3-70b-versatile',
     messages: [
-      { role: 'system', content: ZOX_SYSTEM_PROMPT },
+      { role: 'system', content: (window._zoxBuildPrompt || buildSystemPrompt)() }, // dynamic — injects memory + config
       ...messages,
     ],
     temperature: 0.85,
@@ -350,6 +404,113 @@ async function callGroq(messages) {
   if (!text) throw new Error('Empty response from Groq.');
   return text;
 }
+
+/* ---- Memory Update (background, silent) ---- */
+async function updateMemory(messages) {
+  if (!state.groqKey || messages.length < 2) return;
+
+  // Build context: last 6 messages max to keep it cheap
+  const recentMessages = messages.slice(-6);
+  const existingMemory = JSON.stringify(state.userMemory || {});
+
+  const url = 'https://api.groq.com/openai/v1/chat/completions';
+  const body = {
+    model: 'llama-3.1-8b-instant', // fast + cheap for extraction
+    messages: [
+      { role: 'system', content: MEMORY_PROMPT },
+      {
+        role: 'user',
+        content: `Existing memory:\n${existingMemory}\n\nNew conversation:\n${recentMessages.map(m => `${m.role === 'user' ? 'USER' : 'ZOX'}: ${m.content}`).join('\n')}\n\nReturn updated JSON only.`
+      }
+    ],
+    temperature: 0.1,
+    max_tokens: 512,
+  };
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${state.groqKey}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) return; // silent fail
+
+  const data = await res.json();
+  const raw = data?.choices?.[0]?.message?.content?.trim();
+  if (!raw) return;
+
+  // Parse JSON — strip any accidental markdown
+  const jsonStr = raw.replace(/^```json\n?|```$/gm, '').trim();
+  const updated = JSON.parse(jsonStr);
+
+  // Merge arrays, don't duplicate
+  const merge = (oldArr = [], newArr = []) =>
+    [...new Set([...oldArr, ...newArr])].slice(-5);
+
+  state.userMemory = {
+    name:               updated.name               || state.userMemory.name,
+    skillLevel:         updated.skillLevel          || state.userMemory.skillLevel,
+    preferredLanguages: merge(state.userMemory.preferredLanguages, updated.preferredLanguages),
+    currentProjects:    merge(state.userMemory.currentProjects,    updated.currentProjects),
+    goals:              merge(state.userMemory.goals,               updated.goals),
+    topicsDiscussed:    merge(state.userMemory.topicsDiscussed,     updated.topicsDiscussed),
+    behaviorNotes:      updated.behaviorNotes       || state.userMemory.behaviorNotes,
+    lastUpdated:        new Date().toISOString(),
+  };
+
+  localStorage.setItem('zox_user_memory', JSON.stringify(state.userMemory));
+  updateMemoryIndicator();
+}
+
+/* ---- Memory Indicator in sidebar ---- */
+function updateMemoryIndicator() {
+  const mem = state.userMemory;
+  const existing = document.getElementById('memory-indicator');
+  if (existing) existing.remove();
+
+  if (!mem || !mem.lastUpdated) return;
+
+  const facts = [
+    mem.name         ? `Name: ${mem.name}` : null,
+    mem.skillLevel   ? `Level: ${mem.skillLevel}` : null,
+    mem.preferredLanguages?.length ? mem.preferredLanguages.join(', ') : null,
+    mem.currentProjects?.length    ? `Building: ${mem.currentProjects[0]}` : null,
+  ].filter(Boolean);
+
+  const indicator = document.createElement('div');
+  indicator.id = 'memory-indicator';
+  indicator.style.cssText = `
+    padding: 10px 12px;
+    border-top: 1px solid var(--border);
+    font-size: 0.62rem;
+    color: var(--text-muted);
+    line-height: 1.6;
+  `;
+  indicator.innerHTML = `
+    <div style="color:var(--green-neon);letter-spacing:0.15em;text-transform:uppercase;font-size:0.58rem;margin-bottom:4px;">⚡ ZOX KNOWS YOU</div>
+    ${facts.map(f => `<div style="color:var(--text-dim)">${f}</div>`).join('')}
+    <div style="margin-top:6px;">
+      <button onclick="clearMemory()" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text-dim);font-size:0.6rem;padding:2px 8px;cursor:pointer;font-family:var(--font-main)">Clear Memory</button>
+    </div>
+  `;
+
+  // Insert before sidebar footer
+  const footer = document.querySelector('.sidebar-footer');
+  footer.parentNode.insertBefore(indicator, footer);
+}
+
+function clearMemory() {
+  state.userMemory = {};
+  state.exchangeCount = 0;
+  localStorage.removeItem('zox_user_memory');
+  const ind = document.getElementById('memory-indicator');
+  if (ind) ind.remove();
+  showToast('Memory wiped. Starting fresh.');
+}
+window.clearMemory = clearMemory;
 
 /* ---- Render Messages ---- */
 function appendUserMessage(text) {
@@ -628,4 +789,147 @@ function initCanvas() {
 document.addEventListener('DOMContentLoaded', () => {
   init();
   initCanvas();
+  initFineTune();
 });
+
+/* ============================
+   FINE-TUNE MODAL
+   ============================ */
+
+const TONE_DESCS = [
+  '',
+  'Savage Zoro. Rude, blunt, zero patience. Maximum roast.',
+  'Default Zox. Rude but not evil. Blunt mentor.',
+  'Balanced. Firm but fair. Less sarcasm.',
+  'Calm mentor. Direct and helpful. Minimal roast.',
+  'Professional mode. Respectful, structured, expert.',
+];
+
+const SPECIALTY_PROMPTS = {
+  all:      '',
+  coding:   'Focus heavily on coding, programming, software engineering. Prioritize technical depth.',
+  learning: 'Focus on learning paths, study strategies, and mastering concepts fast.',
+  content:  'Focus on content creation, writing, YouTube, social media, and building an audience.',
+  business: 'Focus on business, startups, productivity, and entrepreneurship.',
+  research: 'Focus on research, analysis, finding information, and academic topics.',
+};
+
+// Load saved fine-tune config
+const DEFAULT_CONFIG = { tone: 2, specialty: 'all', roast: true, tools: true, short: false, custom: '' };
+
+function loadConfig() {
+  try {
+    return JSON.parse(localStorage.getItem('zox_config') || 'null') || { ...DEFAULT_CONFIG };
+  } catch { return { ...DEFAULT_CONFIG }; }
+}
+
+state.config = loadConfig();
+
+function initFineTune() {
+  const modal    = document.getElementById('finetune-modal');
+  const openBtn  = document.getElementById('finetune-btn');
+  const closeBtn = document.getElementById('modal-close');
+  const saveBtn  = document.getElementById('modal-save');
+  const resetBtn = document.getElementById('modal-reset');
+  const toneSlider = document.getElementById('tune-tone');
+  const toneDesc   = document.getElementById('tone-desc');
+  const roastChk   = document.getElementById('tune-roast');
+  const toolsChk   = document.getElementById('tune-tools');
+  const shortChk   = document.getElementById('tune-short');
+  const customTxt  = document.getElementById('tune-custom');
+  const modeGrid   = document.getElementById('mode-grid');
+
+  // Populate from saved config
+  function loadToUI(cfg) {
+    toneSlider.value  = cfg.tone;
+    toneDesc.textContent = TONE_DESCS[cfg.tone];
+    roastChk.checked  = cfg.roast;
+    toolsChk.checked  = cfg.tools;
+    shortChk.checked  = cfg.short;
+    customTxt.value   = cfg.custom || '';
+    modeGrid.querySelectorAll('.mode-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.mode === cfg.specialty);
+    });
+  }
+  loadToUI(state.config);
+
+  // Tone slider live update
+  toneSlider.addEventListener('input', () => {
+    toneDesc.textContent = TONE_DESCS[+toneSlider.value];
+  });
+
+  // Mode buttons
+  modeGrid.querySelectorAll('.mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      modeGrid.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+
+  // Open / Close
+  openBtn.addEventListener('click', () => {
+    loadToUI(state.config);
+    modal.classList.remove('hidden');
+  });
+  closeBtn.addEventListener('click', () => modal.classList.add('hidden'));
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.add('hidden'); });
+
+  // Save
+  saveBtn.addEventListener('click', () => {
+    const activeMode = modeGrid.querySelector('.mode-btn.active')?.dataset.mode || 'all';
+    state.config = {
+      tone:      +toneSlider.value,
+      specialty: activeMode,
+      roast:     roastChk.checked,
+      tools:     toolsChk.checked,
+      short:     shortChk.checked,
+      custom:    customTxt.value.trim(),
+    };
+    localStorage.setItem('zox_config', JSON.stringify(state.config));
+    modal.classList.add('hidden');
+    showToast('Zox reforged. Changes active now.');
+  });
+
+  // Reset
+  resetBtn.addEventListener('click', () => {
+    state.config = { ...DEFAULT_CONFIG };
+    localStorage.removeItem('zox_config');
+    loadToUI(state.config);
+    showToast('Reset to default Zox.');
+  });
+}
+
+/* Inject config into system prompt */
+const _buildBase = buildSystemPrompt;
+// Override buildSystemPrompt to also inject fine-tune config
+const buildSystemPromptWithConfig = function() {
+  let base = _buildBase();
+  const cfg = state.config || DEFAULT_CONFIG;
+
+  const additions = [];
+
+  // Tone
+  if (cfg.tone === 1) additions.push('TONE: Maximum savage mode. Be extremely blunt, sarcastic, zero patience.');
+  else if (cfg.tone === 3) additions.push('TONE: More balanced today. Less sarcasm, still direct.');
+  else if (cfg.tone === 4) additions.push('TONE: Calm mentor mode. Be helpful and firm, minimal roasting.');
+  else if (cfg.tone === 5) additions.push('TONE: Professional mode. Be respectful, structured, and expert.');
+
+  // Specialty
+  if (cfg.specialty && cfg.specialty !== 'all' && SPECIALTY_PROMPTS[cfg.specialty]) {
+    additions.push(SPECIALTY_PROMPTS[cfg.specialty]);
+  }
+
+  // Toggles
+  if (!cfg.roast) additions.push('Do NOT roast or call out laziness. Stay helpful without judgment.');
+  if (!cfg.tools) additions.push('Do NOT suggest external AI tools or redirect to other services.');
+  if (cfg.short)  additions.push('Keep ALL responses very short. Maximum 5 sentences. No long explanations.');
+
+  // Custom rules
+  if (cfg.custom) additions.push(`USER RULES (follow strictly):\n${cfg.custom}`);
+
+  if (additions.length === 0) return base;
+  return base + '\n\n### ACTIVE CONFIGURATION\n' + additions.join('\n');
+};
+
+// Replace the function reference used by callGroq
+window._zoxBuildPrompt = buildSystemPromptWithConfig;
